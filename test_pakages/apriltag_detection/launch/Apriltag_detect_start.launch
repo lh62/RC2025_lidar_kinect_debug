@@ -1,0 +1,13 @@
+<launch>
+
+<arg name="use_rviz" default="true" />
+<include file="$(find apriltag_detection)/launch/continuous_detection.launch" />
+<include file="$(find apriltag_detection)/launch/camera.launch" >
+    <arg name="video_device" value="/dev/video4" />
+    </include>
+<node pkg="tf" type="static_transform_publisher" name="map_to_base_footprint" args="0 0 0 0 0 0 base_footprint map 30" />
+<group if="$(arg use_rviz)">
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find apriltag_detection)/rviz/apriltag.rviz" />
+</group>
+
+</launch>

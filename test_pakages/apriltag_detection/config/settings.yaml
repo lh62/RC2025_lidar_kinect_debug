@@ -1,0 +1,16 @@
+# AprilTag 3 code parameters
+# Find descriptions in apriltag/include/apriltag.h:struct apriltag_detector
+#                      apriltag/include/apriltag.h:struct apriltag_family
+tag_family:        'tag36h11' # options: tagStandard52h13, tagStandard41h12, tag36h11, tag25h9, tag16h5, tagCustom48h12, tagCircle21h7, tagCircle49h12
+tag_threads:       16          # default: 2
+tag_decimate:      1.0        # default: 1.0可以在较低分辨率的图像上检测四边形，从而提高速度，但代价是姿势精度和检测率略有下降。解码二进制有效负载仍以全分辨率完成。
+tag_blur:          0.0        # default: 0.0 高斯模糊
+tag_refine_edges:  1          # default: 1
+tag_debug:         0          # default: 0
+max_hamming_dist:  2          # default: 2 (Tunable parameter with 2 being a good choice - values >=3 consume large amounts of memory. Choose the largest value possible.)
+# Other parameters
+publish_tf:        true       # default: false
+transport_hint:    "raw"      # default: raw, see http://wiki.ros.org/image_transport#Known_Transport_Packages for options
+remove_duplicates: true
+tag_refine_decode: 1          # default: 0 当非零值时，将以增加检测到的标记数量的方式优化检测。对于接近分辨率阈值的非常小的标签（例如，边长 10px）特别有效
+tag_refine_pose: 1            # default: 0 当值不为零时，将以提高提取姿势的准确性来优化检测。这是通过最大化标签的黑白边框周围的对比度来实现的。这通常会增加成功检测到的标记的数量，但不如 tag_refine_decode 有效（或快速）。

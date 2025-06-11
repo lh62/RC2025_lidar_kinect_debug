@@ -1,0 +1,3 @@
+1.添加should_publish_kinect_target_point和should_publish_realsense_target_point的判断逻辑
+2.添加realsense和kinect的可视化
+3.编写串口通讯逻辑

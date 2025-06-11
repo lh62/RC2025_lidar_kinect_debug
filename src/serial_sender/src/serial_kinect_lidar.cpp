@@ -112,12 +112,15 @@ public:
             data_packet.kinect_circle_x = 0;
             data_packet.kinect_circle_y = 0;
         }else{
-            data_packet.kinect_circle_x = 1000000;
-            data_packet.kinect_circle_y = 1000000;
+            double distance = 15*15*2; 
             for(const auto& detection : msg->detections){
-                data_packet.kinect_circle_x = detection.point_3d.x < data_packet.kinect_circle_x ? detection.point_3d.x*1000 : data_packet.kinect_circle_x;
-                data_packet.kinect_circle_y = detection.point_3d.y < data_packet.kinect_circle_y ? detection.point_3d.y*1000 : data_packet.kinect_circle_y;
-        }
+              if ((pow(detection.point_3d.x, 2) + pow(detection.point_3d.y, 2)) < distance)
+              {
+                data_packet.kinect_circle_x = detection.point_3d.x*1000;
+                data_packet.kinect_circle_y = detection.point_3d.y*1000;
+                distance = pow(detection.point_3d.x, 2) + pow(detection.point_3d.y, 2);
+              }
+            }
     }
     }
 

@@ -497,7 +497,7 @@ public:
                        &decode_ptr_host_, &decode_ptr_device_, cuda_post_process_); // 准备缓冲区
 
         // --- 设置 ROS 发布器 ---
-        pub_detections_3d_ = nh_.advertise<yolo_realsense_kinect::DetectedObject3DArray_kinect_circle>("/yolo/kincet/circle/detections_3d", 10);
+        pub_detections_3d_ = nh_.advertise<yolo_realsense_kinect::DetectedObject3DArray_kinect_circle>("/yolo/kinect/circle/detections_3d", 10);
         pub_markers_ = nh_.advertise<visualization_msgs::MarkerArray>("/yolo/kinect/circle/markers", 10);
         pub_debug_image_ = it_.advertise("/yolo/kinect/circle/debug_image", 1);
 

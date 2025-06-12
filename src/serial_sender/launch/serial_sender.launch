@@ -20,6 +20,9 @@
         <param name="en_kinect_loop" value="false" />
         <param name="en_kinect_circle" value="false" />
         <param name="en_base_link" value="true" />
+        <param name="arrive_circle_point_distance_threshold" value="0.8" />
+        <param name="arrive_circle_point_x_threshold" value="0.1" />
+        <param name="arrive_circle_point_y_threshold" value="0.1" />
     </node>
     </group>
 

@@ -22,6 +22,7 @@
 #include <vector>
 #include <string>
 #include <cmath> // For M_PI
+#include <map>
 
 // 用于将 roll, pitch, yaw 转换为四元数
 tf2::Quaternion rpy_to_quaternion(double roll, double pitch, double yaw) {
@@ -83,6 +84,20 @@ public:
         // 然后通过已知的静态变换链计算 base_link 在 world 中的位姿
         pose_publish_timer_ = nh_.createTimer(ros::Duration(1.0/30.0), &TargetWorldTransformer::publish_robot_pose_callback, this); // 30 Hz
 
+        // 初始化目标点历史记录
+        target_history_.clear();
+        last_update_time_ = ros::Time::now();
+
+        // 从参数服务器加载过滤参数
+        nh_.param<double>("target_distance_threshold", target_distance_threshold_, 0.3); // 目标点距离阈值（米）
+        nh_.param<double>("target_timeout", target_timeout_, 5.0); // 目标点超时时间（秒）
+        nh_.param<double>("target_confidence_threshold", target_confidence_threshold_, 0.6); // 目标点置信度阈值
+        nh_.param<double>("target_position_threshold", target_position_threshold_, 0.1); // 目标点位置变化阈值（米）
+        nh_.param<int>("target_history_size", target_history_size_, 10); // 目标点历史记录大小
+
+        ROS_INFO("目标点过滤参数：距离阈值=%.2fm, 超时时间=%.1fs, 置信度阈值=%.2f, 位置变化阈值=%.2fm",
+                 target_distance_threshold_, target_timeout_, target_confidence_threshold_, target_position_threshold_);
+
         ROS_INFO("目标点世界坐标转换节点已初始化。");
     }
 
@@ -110,6 +125,23 @@ private:
     std::string lidar_sensor_frame_id_; // 雷达传感器在 base_link 上的坐标系名称
     std::string lidar_map_origin_frame_id_; // e.g., "camera_init"
     std::string lidar_current_pose_frame_id_; // e.g., "aft_mapped"
+
+    // 目标点历史记录结构
+    struct TargetHistory {
+        geometry_msgs::Point position;
+        ros::Time last_seen;
+        bool is_processed;
+        std::vector<geometry_msgs::Point> position_history;
+    };
+    std::map<int, TargetHistory> target_history_; // 目标点ID到历史记录的映射
+    ros::Time last_update_time_;
+    
+    // 过滤参数
+    double target_distance_threshold_;    // 目标点距离阈值
+    double target_timeout_;              // 目标点超时时间
+    double target_confidence_threshold_;  // 目标点置信度阈值
+    double target_position_threshold_;    // 目标点位置变化阈值
+    int target_history_size_;            // 目标点历史记录大小
 
     // 从 launch 文件加载静态变换参数并存储
     void load_static_transform_param(const std::string& param_name_prefix, const std::string& parent_frame, const std::string& child_frame) {
@@ -213,11 +245,127 @@ private:
         pub_realsense_debug_markers_.publish(marker_array);}
     }
 
-    // 处理函数
+    // 检查目标点是否稳定
+    bool is_target_stable(const geometry_msgs::Point& current_pos, const std::vector<geometry_msgs::Point>& history) {
+        if (history.empty()) return true;
+        
+        // 计算与历史位置的平均距离
+        double total_distance = 0.0;
+        for (const auto& pos : history) {
+            total_distance += std::sqrt(
+                std::pow(current_pos.x - pos.x, 2) +
+                std::pow(current_pos.y - pos.y, 2) +
+                std::pow(current_pos.z - pos.z, 2)
+            );
+        }
+        double avg_distance = total_distance / history.size();
+        
+        return avg_distance < target_position_threshold_;
+    }
+
+    // 更新目标点历史记录
+    void update_target_history(int target_id, const geometry_msgs::Point& position, bool is_processed = false) {
+        auto& history = target_history_[target_id];
+        history.position = position;
+        history.last_seen = ros::Time::now();
+        history.is_processed = is_processed;
+        
+        // 更新位置历史
+        history.position_history.push_back(position);
+        if (history.position_history.size() > target_history_size_) {
+            history.position_history.erase(history.position_history.begin());
+        }
+    }
+
+    // 清理过期的目标点历史记录
+    void cleanup_target_history() {
+        ros::Time current_time = ros::Time::now();
+        for (auto it = target_history_.begin(); it != target_history_.end();) {
+            if ((current_time - it->second.last_seen).toSec() > target_timeout_) {
+                it = target_history_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    // 检查目标点是否已处理
+    bool is_target_processed(int target_id, const geometry_msgs::Point& position) {
+        auto it = target_history_.find(target_id);
+        if (it == target_history_.end()) return false;
+        
+        // 检查距离是否小于阈值
+        double distance = std::sqrt(
+            std::pow(position.x - it->second.position.x, 2) +
+            std::pow(position.y - it->second.position.y, 2) +
+            std::pow(position.z - it->second.position.z, 2)
+        );
+        
+        return it->second.is_processed && distance < target_distance_threshold_;
+    }
+
+    // 修改目标点发布判断函数
+    bool should_publish_target_point_common(const geometry_msgs::PointStamped& point_in_world,
+                                         const std::string& class_name,
+                                         float confidence,
+                                         visualization_msgs::MarkerArray& marker_array,
+                                         int& marker_id_counter,
+                                         const std::string& ns_prefix) {
+        // 基本过滤条件
+        if (confidence < target_confidence_threshold_) {
+            ROS_DEBUG("目标点置信度 %.2f 低于阈值 %.2f，跳过", confidence, target_confidence_threshold_);
+            return false;
+        }
+
+        // 生成目标点ID（使用位置信息）
+        int target_id = static_cast<int>(point_in_world.point.x * 1000 + point_in_world.point.y * 1000);
+
+        // 检查是否已处理
+        if (is_target_processed(target_id, point_in_world.point)) {
+            ROS_DEBUG("目标点 (ID: %d) 已处理，跳过", target_id);
+            return false;
+        }
+
+        // 检查目标点稳定性
+        auto it = target_history_.find(target_id);
+        if (it != target_history_.end() && !is_target_stable(point_in_world.point, it->second.position_history)) {
+            ROS_DEBUG("目标点 (ID: %d) 位置不稳定，跳过", target_id);
+            return false;
+        }
+
+        // 更新目标点历史记录
+        update_target_history(target_id, point_in_world.point);
+
+        // 创建可视化标记
+        visualization_msgs::Marker marker;
+        marker.header = point_in_world.header;
+        marker.ns = ns_prefix + "_world_markers";
+        marker.id = marker_id_counter++;
+        marker.type = visualization_msgs::Marker::SPHERE;
+        marker.action = visualization_msgs::Marker::ADD;
+        marker.pose.position = point_in_world.point;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 0.15; marker.scale.y = 0.15; marker.scale.z = 0.15;
+        marker.color.a = 0.8;
+        if (ns_prefix == "kinect_circle_detections") {
+            marker.color.r = 1.0; marker.color.g = 0.0; marker.color.b = 0.0;
+        } else {
+            marker.color.r = 0.0; marker.color.g = 0.0; marker.color.b = 1.0;
+        }
+        marker.lifetime = ros::Duration(0.5);
+        marker_array.markers.push_back(marker);
+
+        return true;
+    }
+
+    // 修改处理函数，添加历史记录清理
     void process_detections_realsense(const yolo_realsense_kinect::DetectedObject3DArray_kinect_circle::ConstPtr& msg_in,
-                            const std::string& camera_optical_frame,
-                            ros::Publisher& publisher,
-                        visualization_msgs::MarkerArray& marker_array) {
+                                    const std::string& camera_optical_frame,
+                                    ros::Publisher& publisher,
+                                    visualization_msgs::MarkerArray& marker_array) {
+        // 清理过期的目标点历史记录
+        cleanup_target_history();
+
         if (msg_in->detections.empty()) {
             return;
         }
@@ -245,13 +393,12 @@ private:
                 continue; // 跳过这个点
             }
 
-                        // --- 条件判断函数 ---
-            if (should_publish_realsense_target_point(pt_world, det_in, marker_array)) {
+            // --- 条件判断函数 ---
+            if (should_publish_target_point_common(pt_world, det_in.class_name, det_in.confidence, marker_array, marker_id_counter_, "realsense_circle_detections")) {
                 target_world_transformer::World_Realsense_Target_Messages det_out ;
                 det_out.header = msg_out.header;
                 det_out.y = pt_world.point.y; // 更新为世界坐标
                 det_out.x = pt_world.point.x;
-                // det_out.header.frame_id = world_frame_id_; // DetectedObject3D 通常没有自己的header，依赖于Array的header
                 msg_out.detections.push_back(det_out);
             }
         }
@@ -260,10 +407,14 @@ private:
             publisher.publish(msg_out);
         }
     }
+
     void process_detections_kinect(const yolo_realsense_kinect::DetectedObject3DArray_kinect_loop::ConstPtr& msg_in,
-                            const std::string& camera_optical_frame,
-                            ros::Publisher& publisher,
-                        visualization_msgs::MarkerArray& marker_array) {
+                                 const std::string& camera_optical_frame,
+                                 ros::Publisher& publisher,
+                                 visualization_msgs::MarkerArray& marker_array) {
+        // 清理过期的目标点历史记录
+        cleanup_target_history();
+
         if (msg_in->detections.empty()) {
             return;
         }
@@ -279,25 +430,24 @@ private:
                 continue;
             }
 
-            // geometry_msgs::PointStamped pt_cam, pt_world;
-            // pt_cam.header.frame_id = camera_optical_frame; // 输入点在相机光心坐标系
-            // pt_cam.header.stamp = msg_in->header.stamp; // 使用输入消息的时间戳进行变换
-            // pt_cam.point = det_in.point_3d;
+            geometry_msgs::PointStamped pt_cam, pt_world;
+            pt_cam.header.frame_id = camera_optical_frame; // 输入点在相机光心坐标系
+            pt_cam.header.stamp = msg_in->header.stamp; // 使用输入消息的时间戳进行变换
+            pt_cam.point = det_in.point_3d;
 
-            // try {
-            //     tf_buffer_.transform(pt_cam, pt_world, world_frame_id_, ros::Duration(0.2)); // 容忍0.2秒的 TF 延迟
-            // } catch (tf2::TransformException& ex) {
-            //     ROS_WARN_THROTTLE(1.0, "目标点 TF 变换 %s -> %s 失败: %s", camera_optical_frame.c_str(), world_frame_id_.c_str(), ex.what());
-            //     continue; // 跳过这个点
-            // }
+            try {
+                tf_buffer_.transform(pt_cam, pt_world, world_frame_id_, ros::Duration(0.2)); // 容忍0.2秒的 TF 延迟
+            } catch (tf2::TransformException& ex) {
+                ROS_WARN_THROTTLE(1.0, "目标点 TF 变换 %s -> %s 失败: %s", camera_optical_frame.c_str(), world_frame_id_.c_str(), ex.what());
+                continue; // 跳过这个点
+            }
 
             // --- 条件判断函数 ---
-            if (should_publish_kinect_target_point(pt_world, det_in, marker_array)) {
+            if (should_publish_target_point_common(pt_world, det_in.class_name, det_in.confidence, marker_array, marker_id_counter_, "kinect_loop_detections")) {
                 target_world_transformer::World_Kinect_Target_Messages det_out ;
                 det_out.header = msg_out.header;
                 det_out.dx = det_in.dx; // 更新为世界坐标
                 det_out.hoop_net_depth = det_in.point.x;
-                // det_out.header.frame_id = world_frame_id_; // DetectedObject3D 通常没有自己的header，依赖于Array的header
                 msg_out.detections.push_back(det_out);
             }
         }
@@ -305,86 +455,6 @@ private:
         if (!msg_out.detections.empty()) {
             publisher.publish(msg_out);
         }
-    }
-
-    // --- 用于判断是否发布目标点的函数 (预留给用户实现具体逻辑) ---
-    bool should_publish_realsense_target_point(const geometry_msgs::PointStamped& point_in_world,
-                                     const yolo_realsense_kinect::DetectedObject3D_kinect_circle& original_detection,
-                                    visualization_msgs::MarkerArray& marker_array) {
-        // 示例逻辑：只发布在世界坐标系 X 方向大于 0 的点
-        // if (point_in_world.point.x > 0) {
-        //     return true;
-        // }
-        // return false;
-
-        // 默认发布所有成功转换的点
-        // 创建球体标记
-        int marker_id= 0;
-        visualization_msgs::Marker marker;
-        marker.header = point_in_world.header;
-        marker.ns = "realsense_detections_in_the_world";
-        marker.id = marker_id++;
-        marker.type = visualization_msgs::Marker::SPHERE;
-        marker.action = visualization_msgs::Marker::ADD;
-        marker.pose.position = point_in_world.point;
-        marker.pose.orientation.w = 1.0;
-        marker.scale.x = 0.1; marker.scale.y = 0.1; marker.scale.z = 0.1;
-        marker.color.a = 0.8; marker.color.r = 1.0; marker.color.g = 0.0; marker.color.b = 0.0;
-        marker.lifetime = ros::Duration(0.5); // 标记持续时间
-        marker_array.markers.push_back(marker);
-
-        // 创建文本标记
-        visualization_msgs::Marker text_marker = marker;
-        ext_marker.id = marker_id++;
-        text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-        text_marker.text = original_detection.class_name;
-        text_marker.pose.position.z += 0.1; // 将文本放在球体上方
-        text_marker.scale.z = 0.1; // 文本高度
-        text_marker.color.r = 1.0; text_marker.color.g = 1.0; text_marker.color.b = 1.0;
-        marker_array.markers.push_back(text_marker);
-
-        ROS_DEBUG("目标点 (世界坐标系): x=%.2f, y=%.2f, z=%.2f",
-            point_in_world.point.x, point_in_world.point.y, point_in_world.point.z);
-        return true;
-    }
-
-    bool should_publish_kinect_target_point(const geometry_msgs::PointStamped& point_in_world,
-                                     const yolo_realsense_kinect::DetectedObject3D_kinect_loop& original_detection,
-                                    visualization_msgs::MarkerArray& marker_array) {
-        // 示例逻辑：只发布在世界坐标系 X 方向大于 0 的点
-        // if (point_in_world.point.x > 0) {
-        //     return true;
-        // }
-        // return false;
-
-        // 默认发布所有成功转换的点
-        // ROS_DEBUG("目标点 (世界坐标系): x=%.2f, y=%.2f, z=%.2f, 类别=%s, 置信度=%.2f",
-        //     point_in_world.point.x, point_in_world.point.y, point_in_world.point.z,
-        //     original_detection.class_name.c_str(), original_detection.confidence);
-        int marker_id= 0;
-        visualization_msgs::Marker marker;
-        marker.header = point_in_world.header;
-        marker.ns = "kinect_detections_in_the_world";
-        marker.id = marker_id++;
-        marker.type = visualization_msgs::Marker::SPHERE;
-        marker.action = visualization_msgs::Marker::ADD;
-        marker.pose.position = point_in_world.point;
-        marker.pose.orientation.w = 1.0;
-        marker.scale.x = 0.1; marker.scale.y = 0.1; marker.scale.z = 0.1;
-        marker.color.a = 0.8; marker.color.r = 0.0; marker.color.g = 0.0; marker.color.b = 1.0;
-        marker.lifetime = ros::Duration(0.5); // 标记持续时间
-        marker_array.markers.push_back(marker);
-
-        // 创建文本标记
-        visualization_msgs::Marker text_marker = marker;
-        ext_marker.id = marker_id++;
-        text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
-        text_marker.text = original_detection.class_name;
-        text_marker.pose.position.z += 0.1; // 将文本放在球体上方
-        text_marker.scale.z = 0.1; // 文本高度
-        text_marker.color.r = 1.0; text_marker.color.g = 1.0; text_marker.color.b = 1.0;
-        marker_array.markers.push_back(text_marker);
-        return true;
     }
 };
 

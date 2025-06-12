@@ -253,7 +253,7 @@ private:
                 continue; 
             }
 
-            if (should_publish_target_point_common(pt_world, det_in.class_name, det_in.confidence, marker_array_for_debug, current_marker_id_for_this_array, "kinect_circle_detections")) {
+            if (should_publish_target_point_common(pt_world, det_in.class_name, marker_array_for_debug, current_marker_id_for_this_array, "kinect_circle_detections")) {
                 yolo_realsense_kinect::DetectedObject3D_kinect_circle det_out = det_in; 
                 det_out.point_3d = pt_world.point; 
                 msg_out_array.detections.push_back(det_out); 
@@ -275,12 +275,12 @@ private:
             return;
         }
 
-        yolo_realsense_kinect::DetectedObject3DArray_kinect_loop msg_out_array; // [cite: 74, 189]
-        msg_out_array.header.stamp = ros::Time::now(); // [cite: 75, 190]
-        msg_out_array.header.frame_id = world_frame_id_; // [cite: 76, 191]
+        yolo_realsense_kinect::DetectedObject3DArray_kinect_loop msg_out_array; 
+        msg_out_array.header.stamp = ros::Time::now(); 
+        msg_out_array.header.frame_id = world_frame_id_; 
         marker_array_for_debug.markers.clear();
 
-        int current_marker_id_for_this_array = 0; // [cite: 77, 192]
+        int current_marker_id_for_this_array = 0; 
 
         for (const auto& det_in : msg_in->detections) {
             // 假设 DetectedObject3D_kinect_loop 包含 point_3d, class_name, confidence
@@ -290,80 +290,76 @@ private:
             }
 
             geometry_msgs::PointStamped pt_cam, pt_world;
-            pt_cam.header.frame_id = camera_optical_frame; // [cite: 79, 194]
-            pt_cam.header.stamp = msg_in->header.stamp;    // [cite: 80, 195]
-            pt_cam.point = det_in.point_3d;              // [cite: 81, 196]
+            pt_cam.header.frame_id = camera_optical_frame; 
+            pt_cam.header.stamp = msg_in->header.stamp;    
+            pt_cam.point = det_in.point_3d;              
 
-            try { // [cite: 81, 159, 196]
-                tf_buffer_.transform(pt_cam, pt_world, world_frame_id_, ros::Duration(0.1)); // [cite: 82, 197]
+            try { 
+                tf_buffer_.transform(pt_cam, pt_world, world_frame_id_, ros::Duration(0.1)); 
             } catch (tf2::TransformException& ex) {
-                ROS_WARN_THROTTLE(1.0, "Kinect Loop: 目标点TF变换从 '%s' 到 '%s' 失败: %s. 跳过此目标点。", // [cite: 83, 198]
+                ROS_WARN_THROTTLE(1.0, "Kinect Loop: 目标点TF变换从 '%s' 到 '%s' 失败: %s. 跳过此目标点。", 
                                   camera_optical_frame.c_str(), world_frame_id_.c_str(), ex.what());
                 continue;
             }
 
-            if (should_publish_target_point_common(pt_world, det_in.class_name, det_in.confidence, marker_array_for_debug, current_marker_id_for_this_array, "kinect_loop_detections")) {
+            if (should_publish_target_point_common(pt_world, det_in.class_name, marker_array_for_debug, current_marker_id_for_this_array, "kinect_loop_detections")) {
                 yolo_realsense_kinect::DetectedObject3D_kinect_loop det_out = det_in;
-                det_out.point_3d = pt_world.point; // [cite: 84, 199]
-                msg_out_array.detections.push_back(det_out); // [cite: 85, 200]
+                det_out.point_3d = pt_world.point; 
+                msg_out_array.detections.push_back(det_out); 
             }
         }
 
         if (!msg_out_array.detections.empty()) {
-            array_publisher.publish(msg_out_array); // [cite: 86, 201]
+            array_publisher.publish(msg_out_array); 
         }
     }
 
     bool should_publish_target_point_common(const geometry_msgs::PointStamped& point_in_world,
                                             const std::string& class_name,
-                                            float confidence, // [cite: 87, 202]
                                             visualization_msgs::MarkerArray& marker_array,
-                                            int& marker_id_counter, // [cite: 88, 203]
+                                            int& marker_id_counter, 
                                             const std::string& ns_prefix) {
-        // --- 在此实现您的自定义判断逻辑 ---
-        // if (confidence < 0.6) { return false; } [cite: 89, 204]
-        // if (point_in_world.point.z < 0.0 || point_in_world.point.z > 5.0) { return false; } [cite: 90, 205]
-
-        ROS_DEBUG("目标点 (World Frame, 来自 %s): [x:%.2f, y:%.2f, z:%.2f], 类别:'%s', 置信度:%.2f",
+       
+        ROS_DEBUG("目标点 (World Frame, 来自 %s): [x:%.2f, y:%.2f, z:%.2f], 类别:'%s'",
                   ns_prefix.c_str(), point_in_world.point.x, point_in_world.point.y, point_in_world.point.z,
-                  class_name.c_str(), confidence);
+                  class_name.c_str());
 
-        visualization_msgs::Marker marker; // [cite: 91, 92, 206, 207]
-        marker.header = point_in_world.header; // [cite: 93, 208]
+        visualization_msgs::Marker marker; 
+        marker.header = point_in_world.header; 
         marker.ns = ns_prefix + "_world_markers";
-        marker.id = marker_id_counter++;      // [cite: 94, 209]
+        marker.id = marker_id_counter++;     
         marker.type = visualization_msgs::Marker::SPHERE;
         marker.action = visualization_msgs::Marker::ADD;
-        marker.pose.position = point_in_world.point; // [cite: 87, 95, 210]
-        marker.pose.orientation.w = 1.0; // [cite: 76, 96, 211]
-        marker.scale.x = 0.15; marker.scale.y = 0.15; marker.scale.z = 0.15; // [cite: 97, 212]
-        marker.color.a = 0.8; // [cite: 98, 213]
+        marker.pose.position = point_in_world.point; 
+        marker.pose.orientation.w = 1.0; 
+        marker.scale.x = 0.15; marker.scale.y = 0.15; marker.scale.z = 0.15; 
+        marker.color.a = 0.8; 
         if (ns_prefix == "kinect_circle_detections") {
             marker.color.r = 1.0; marker.color.g = 0.2; marker.color.b = 0.2; // Kinect Circle 红色系 (调整了G分量) // [cite: 99]
         } else { // Kinect Loop (默认)
             marker.color.r = 0.2; marker.color.g = 0.2; marker.color.b = 1.0; // Kinect Loop 蓝色系 (调整了R,G分量) // [cite: 100]
         }
-        marker.lifetime = ros::Duration(0.5); // [cite: 101, 216]
+        marker.lifetime = ros::Duration(0.5);
         marker_array.markers.push_back(marker);
 
-        visualization_msgs::Marker text_marker = marker; // [cite: 102, 103, 217, 218]
-        text_marker.id = marker_id_counter++;    // [cite: 104, 219]
-        text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING; // [cite: 105, 220]
+        visualization_msgs::Marker text_marker = marker; 
+        text_marker.id = marker_id_counter++;   
+        text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING; 
         std::stringstream ss;
-        ss << class_name << " (" << std::fixed << std::setprecision(2) << confidence << ")"; // [cite: 106, 221]
+        ss << class_name << " (" << std::fixed << std::setprecision(2) << confidence << ")"; 
         text_marker.text = ss.str();
-        text_marker.pose.position.z += 0.15; // [cite: 107, 222]
-        text_marker.scale.x = 0.0; text_marker.scale.y = 0.0; text_marker.scale.z = 0.1; // [cite: 108, 223]
-        text_marker.color.r = 1.0; text_marker.color.g = 1.0; text_marker.color.b = 1.0; // [cite: 109, 224]
+        text_marker.pose.position.z += 0.15;
+        text_marker.scale.x = 0.0; text_marker.scale.y = 0.0; text_marker.scale.z = 0.1;
+        text_marker.color.r = 1.0; text_marker.color.g = 1.0; text_marker.color.b = 1.0; 
         marker_array.markers.push_back(text_marker);
 
-        return true; // [cite: 110, 225]
+        return true;
     }
 };
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "target_world_transformer_node");
-    ros::NodeHandle nh("~"); // [cite: 94, 111, 188, 226]
+    ros::NodeHandle nh("~"); 
     TargetWorldTransformer transformer(nh);
     ros::spin();
     return 0;

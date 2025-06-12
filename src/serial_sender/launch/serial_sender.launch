@@ -23,6 +23,7 @@
         <param name="arrive_circle_point_distance_threshold" value="0.8" />
         <param name="arrive_circle_point_x_threshold" value="0.1" />
         <param name="arrive_circle_point_y_threshold" value="0.1" />
+        <param name="world_frame_id" value="world" />
     </node>
     </group>
 

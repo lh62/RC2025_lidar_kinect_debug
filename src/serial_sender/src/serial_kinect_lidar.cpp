@@ -3,6 +3,7 @@
 #include <std_msgs/UInt8.h>
 #include <serial/serial.h>
 #include <tf/tf.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <cmath>
 #include <yolo_realsense_kinect/DetectedObject3D_kinect_loop.h>
 #include <yolo_realsense_kinect/DetectedObject3DArray_kinect_loop.h>
@@ -40,7 +41,9 @@ public:
         nh.param<float>("arrive_circle_point_distance_threshold", arrive_circle_point_distance_threshold, 0.5);
         nh.param<float>("arrive_circle_point_x_threshold", arrive_circle_point_x_threshold, 0.1);
         nh.param<float>("arrive_circle_point_y_threshold", arrive_circle_point_y_threshold, 0.1);
+        nh.param<std::string>("world_frame_id",world_frame_id,"world");
 
+        pub_circle_debug_markers_ = nh.advertise<visualization_msgs::MarkerArray>("serial_sender/circle_debug_markers", 1);
 
         if (en_base_link)
             sub_base_link = nh.subscribe(base_link_pub, 1, &SerialSender::sub_base_link_Callback, this);
@@ -102,17 +105,6 @@ public:
             return;
         }
 
-        // 更新打卡点列表
-        for (const auto& detection : msg->detections) {
-            double dx = detection.point_3d.x - data_packet.base_link_x / 1000.0;
-            double dy = detection.point_3d.y - data_packet.base_link_y / 1000.0;
-            double dist_sq = dx * dx + dy * dy;
-            if (dist_sq < arrive_circle_point_distance_threshold * arrive_circle_point_distance_threshold &&
-                !is_in_arrived_list(detection)) {
-                arrive_circle_points.push_back(check_point{detection.point_3d.x, detection.point_3d.y});
-            }
-        }
-
         //找出非打卡点中距离底盘最近的点
         double min_dist_sq = std::numeric_limits<double>::max();
         bool found = false;
@@ -127,6 +119,43 @@ public:
                     data_packet.kinect_circle_y = detection.point_3d.y * 1000;
                     found = true;
                 }
+            }
+        }
+
+        //发布marker用于调试
+        visualization_msgs::Marker marker;
+        marker.header.frame_id = world_frame_id;
+        marker.header.stamp = ros::Time::now();
+        marker.ns = "sender_circle_debug_markers";
+        marker.id = 0;
+        marker.type = visualization_msgs::Marker::SPHERE;
+        marker.action = visualization_msgs::Marker::ADD;
+        marker.pose.position.x = data_packet.kinect_circle_x / 1000.0;
+        marker.pose.position.y = data_packet.kinect_circle_y / 1000.0;
+        marker.pose.position.z = 0.0;
+        marker.pose.orientation.x = 0.0;
+        marker.pose.orientation.y = 0.0;
+        marker.pose.orientation.z = 0.0;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 0.5;
+        marker.scale.y = 0.5;
+        marker.scale.z = 0.5;
+        marker.color.a = 1.0;
+        marker.color.r = 0.0;
+        marker.color.g = 1.0;
+        marker.color.b = 0.0;
+        visualization_msgs::MarkerArray marker_array;
+        marker_array.markers.push_back(marker);
+        pub_circle_debug_markers_.publish(marker_array);
+
+         // 更新打卡点列表
+        for (const auto& detection : msg->detections) {
+            double dx = detection.point_3d.x - data_packet.base_link_x / 1000.0;
+            double dy = detection.point_3d.y - data_packet.base_link_y / 1000.0;
+            double dist_sq = dx * dx + dy * dy;
+            if (dist_sq < arrive_circle_point_distance_threshold * arrive_circle_point_distance_threshold &&
+                !is_in_arrived_list(detection)) {
+                arrive_circle_points.push_back(check_point{detection.point_3d.x, detection.point_3d.y});
             }
         }
 
@@ -168,6 +197,7 @@ private:
     ros::Subscriber sub_base_link;
     ros::Subscriber sub_kinect_loop;
     ros::Subscriber sub_kinect_circle;
+    ros::Publisher pub_circle_debug_markers_;
     std::string base_link_pub;
     std::string kinect_loop_pub;
     std::string kinect_circle_pub;
@@ -182,6 +212,8 @@ private:
     float arrive_circle_point_distance_threshold;
     float arrive_circle_point_x_threshold;
     float arrive_circle_point_y_threshold;
+    std::string world_frame_id;
+    
 };
 
 int main(int argc, char** argv) {

@@ -52,7 +52,7 @@ public:
         load_static_transform_param("base_link_to_kinect_loop_camera", base_link_frame_id_, kinect_loop_camera_optical_frame_id_); // [cite: 9, 124]
         load_static_transform_param("base_link_to_kinect_circle_camera", base_link_frame_id_, kinect_circle_camera_optical_frame_id_); // [cite: 10, 125]
         load_static_transform_param("base_link_to_lidar_sensor", base_link_frame_id_, lidar_sensor_frame_id_); // [cite: 11, 126]
-        load_static_transform_param("lidar_current_pose_frame_to_base_link",lidar_current_pose_frame_id_, base_link_frame_id_); 
+        load_static_transform_param("lidar_current_pose_frame_to_lidar_link",lidar_current_pose_frame_id_, lidar_sensor_frame_id_); 
 
         if (!static_transforms_.empty()) {
             static_broadcaster_.sendTransform(static_transforms_); // [cite: 12, 127]

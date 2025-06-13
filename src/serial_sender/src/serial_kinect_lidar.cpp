@@ -42,6 +42,14 @@ public:
         nh.param<float>("arrive_circle_point_x_threshold", arrive_circle_point_x_threshold, 0.1);
         nh.param<float>("arrive_circle_point_y_threshold", arrive_circle_point_y_threshold, 0.1);
         nh.param<std::string>("world_frame_id",world_frame_id,"world");
+        nh.param<bool>("x_same_direction", x_same_direction,true);
+        nh.param<bool>("y_same_direction", y_same_direction);
+        nh.param<int>("margin", margin, 0.1); // 单位为米
+        nh.param<int>("changdi_kuan", changdi_kuan, 8); // 单位为米
+        nh.param<int>("changdi_chang_zhu", changdi_chang_zhu, 15);
+        nh.param<int>("changdi_chang_tiao", changdi_chang_tiao, 6);
+        nh.param<bool>("kuan_equal_x", kuan_equal_x, true);
+        nh.param<bool>("whether_zhu", whether_zhu, true);
 
         pub_circle_debug_markers_ = nh.advertise<visualization_msgs::MarkerArray>("serial_sender/circle_debug_markers", 1);
 
@@ -109,7 +117,7 @@ public:
         double min_dist_sq = std::numeric_limits<double>::max();
         bool found = false;
         for (const auto& detection : msg->detections) {
-            if (!is_in_arrived_list(detection)) {
+            if (!is_in_arrived_list(detection) && whether_cross_line(detection.point_3d.x, detection.point_3d.y)) {
                 double dx = detection.point_3d.x - data_packet.base_link_x / 1000.0;
                 double dy = detection.point_3d.y - data_packet.base_link_y / 1000.0;
                 double dist_sq = dx * dx + dy * dy;
@@ -181,6 +189,8 @@ public:
         ROS_INFO("base_link_x: %.3f", this->data_packet.base_link_x);
         ROS_INFO("base_link_y: %.3f", this->data_packet.base_link_y);
         ROS_INFO("base_link_w: %.3f", this->data_packet.base_link_w);
+        ROS_INFO("point_to_base_distance: %.3f", std::sqrt(pow(data_packet.base_link_x-data_packet.kinect_circle_x, 2)) + pow(data_packet.base_link_y-data_packet.kinect_circle_y, 2));
+
     }
 
     bool is_in_arrived_list(const yolo_realsense_kinect::DetectedObject3D_kinect_circle& detection) {
@@ -193,6 +203,140 @@ public:
         return false;
     }
 
+    bool whether_cross_line(float& x, float& y){
+        int case_value1 = (whether_zhu << 1) | (kuan_equal_x);
+        int case_value2 = (x_same_direction << 1) | (y_same_direction);
+        switch (case_value1)
+        {
+        case 0:
+            /* whether_zhu = false, kuan_equal_x = false */
+            switch (case_value2)
+            {
+            case 0: 
+                /* x_same_direction = false, y_same_direction = false */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_chang_tiao)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_kuan)))
+                return true;
+                break;
+            
+            case 1: 
+                /* x_same_direction = false, y_same_direction = true */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_chang_tiao)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_kuan)))
+                return true;
+                break;
+            
+            case 2: 
+                /* x_same_direction = true, y_same_direction = false */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_chang_tiao)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_kuan)))
+                return true;
+                break;
+            
+            case 3: 
+                /* x_same_direction = true, y_same_direction = true */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_chang_tiao)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_kuan)))
+                return true;
+            default:
+                break;
+            }
+            break;
+        
+        case 1:
+            /* whether_zhu = false, kuan_equal_x = true */
+            switch (case_value2)
+            {
+            case 0: 
+                /* x_same_direction = false, y_same_direction = false */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_kuan)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_chang_tiao)))
+                return true;
+                break;
+            
+            case 1: 
+                /* x_same_direction = false, y_same_direction = true */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_kuan)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_chang_tiao)))
+                return true;
+                break;
+            
+            case 2: 
+                /* x_same_direction = true, y_same_direction = false */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_kuan)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_chang_tiao)))
+                return true;
+                break;
+            
+            case 3: 
+                /* x_same_direction = true, y_same_direction = true */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_kuan)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_chang_tiao)))
+                return true;
+            default:
+                break;
+            }
+            break;
+        
+        case 2:
+            /* whether_zhu = true, kuan_equal_x = false */
+            switch (case_value2)
+            {
+            case 0: 
+                /* x_same_direction = false, y_same_direction = false */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_chang_zhu)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_kuan)))
+                return true;
+                break;
+            
+            case 1: 
+                /* x_same_direction = false, y_same_direction = true */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_chang_zhu)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_kuan)))
+                return true;
+                break;
+            
+            case 2: 
+                /* x_same_direction = true, y_same_direction = false */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_chang_zhu)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_kuan)))
+                return true;
+                break;
+            
+            case 3: 
+                /* x_same_direction = true, y_same_direction = true */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_chang_zhu)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_kuan)))
+                return true;
+            default:
+                break;
+            }
+            break;
+        
+        case 3:
+            /* whether_zhu = true, kuan_equal_x = true */
+            switch (case_value2)
+            {
+            case 0: 
+                /* x_same_direction = false, y_same_direction = false */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_kuan)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_chang_zhu)))
+                return true;
+                break;
+            
+            case 1: 
+                /* x_same_direction = false, y_same_direction = true */
+                if((x - this->margin < 0) && (x + this->margin > (-this->changdi_kuan)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_chang_zhu)))
+                return true;
+                break;
+            
+            case 2: 
+                /* x_same_direction = true, y_same_direction = false */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_kuan)) && (y - this->margin < 0) && (y + this->margin > (-this->changdi_chang_zhu)))
+                return true;
+                break;
+            
+            case 3: 
+                /* x_same_direction = true, y_same_direction = true */
+                if((x + this->margin > 0) && (x - this->margin < (this->changdi_kuan)) && (y + this->margin > 0) && (y - this->margin < (this->changdi_chang_zhu)))
+                return true;
+            default:
+                break;
+            }
+            break;
+        
+        default:
+            break;
+        }
+        return false;
+    }
 private:
     ros::Subscriber sub_base_link;
     ros::Subscriber sub_kinect_loop;
@@ -213,6 +357,14 @@ private:
     float arrive_circle_point_x_threshold;
     float arrive_circle_point_y_threshold;
     std::string world_frame_id;
+    bool x_same_direction;
+    bool y_same_direction;
+    int margin;
+    int changdi_kuan;
+    int changdi_chang_zhu;
+    int changdi_chang_tiao;
+    bool whether_zhu;
+    bool kuan_equal_x;
     
 };
 

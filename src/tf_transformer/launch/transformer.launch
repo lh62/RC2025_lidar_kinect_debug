@@ -18,15 +18,15 @@
     <param name="lidar_map_origin_frame_id" value="$(arg lidar_map_origin)"/>
     <param name="lidar_current_pose_frame_id" value="$(arg lidar_current_pose)"/>
 
-    <rosparam param="world_to_lidar_map_origin">[0.0, 0.0, 0.0, 0.0, 0.0, 90.0]</rosparam>
+    <rosparam param="world_to_lidar_map_origin">[0.0, -0.07122, 0.3645, 0.0, 0.0, 90.0]</rosparam>
 
     <rosparam param="base_link_to_kinect_loop_camera">[0.03105, 0.22471, 0.70372, -48.0, 0.0, 0.0]</rosparam>
 
     <rosparam param="base_link_to_kinect_circle_camera">[0.03105, 0.22979, 0.61973, -134.0, 0.0, 0.0]</rosparam>
 
-    <rosparam param="base_link_to_lidar_sensor">[0.0, -0.07872, 0.357, 0.0, 0.0, 90.0]</rosparam>
+    <rosparam param="base_link_to_lidar_sensor">[0.0, -0.07122, 0.3645, 0.0, 0.0, 90.0]</rosparam>
 
-    <rosparam param="lidar_current_pose_frame_to_base_link">[0.0, 0.0, 0.0, 0.0, 0.0, -90.0]</rosparam>
+    <rosparam param="lidar_current_pose_frame_to_lidar_link">[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]</rosparam>
 
     </node>
 </launch>

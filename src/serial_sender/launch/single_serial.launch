@@ -11,20 +11,20 @@
         <param name="base_link_pub" value="$(arg base_link_pub)" />
         <param name="kinect_loop_pub" value="$(arg kinect_loop_pub)" />
         <param name="kinect_circle_pub" value="$(arg kinect_circle_pub)" />
-        <param name="en_kinect_loop" value="false" />
-        <param name="en_kinect_circle" value="false" />
-        <param name="en_base_link" value="true" />
-        <param name="arrive_circle_point_distance_threshold" value="0.8" />
-        <param name="arrive_circle_point_x_threshold" value="0.1" />
-        <param name="arrive_circle_point_y_threshold" value="0.1" />
+        <param name="en_kinect_loop" value="false" type="bool" />
+        <param name="en_kinect_circle" value="false" type="bool" />
+        <param name="en_base_link" value="false" type="bool" />
+        <param name="arrive_circle_point_distance_threshold" value="0.4" />
+        <param name="arrive_circle_point_x_threshold" value="0.21" />
+        <param name="arrive_circle_point_y_threshold" value="0.21" />
         <param name="world_frame_id" value="world" />
-        <param name="x_same_direction" value="true" />
-        <param name="y_same_direction" value="false" />
+        <param name="x_same_direction" value="false" type="bool" />
+        <param name="y_same_direction" value="false" type="bool" />
         <param name="margin" value="0.1" />
-        <param name="changdi_kuan" value="8" />
-        <param name="changdi_chang_zhu" value="15" />
-        <param name="changdi_chang_tiao" value="6" />
-        <param name="kuan_equal_x" value="true" />
-        <param name="whether_zhu" value="false" />
+        <param name="changdi_kuan" value="8.0" />
+        <param name="changdi_chang_zhu" value="15.0" />
+        <param name="changdi_chang_tiao" value="6.0" />
+        <param name="kuan_equal_x" value="false" type="bool" />
+        <param name="whether_zhu" value="false" type="bool" />
     </node>
 </launch>

@@ -14,7 +14,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_msgs
   std_msgs
   tf
-  visualization_msgs
   yolo_realsense_kinect
 )
 
@@ -110,7 +109,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES serial_sender
-#  CATKIN_DEPENDS apriltag_ros roscpp serial std_msgs tf2_ros visualization_msgs
+#  CATKIN_DEPENDS apriltag_ros roscpp serial std_msgs tf2_ros
 #  DEPENDS system_lib
 )
 

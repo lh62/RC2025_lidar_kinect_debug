@@ -51,7 +51,7 @@ public:
         load_static_transform_param("world_to_lidar_map_origin", world_frame_id_, lidar_map_origin_frame_id_); // [cite: 8, 123]
         load_static_transform_param("base_link_to_kinect_loop_camera", base_link_frame_id_, kinect_loop_camera_optical_frame_id_); // [cite: 9, 124]
         load_static_transform_param("base_link_to_kinect_circle_camera", base_link_frame_id_, kinect_circle_camera_optical_frame_id_); // [cite: 10, 125]
-        load_static_transform_param("base_link_to_lidar_sensor", base_link_frame_id_, lidar_sensor_frame_id_); // [cite: 11, 126]
+        load_static_transform_param("lidar_sensor_to_base_link", lidar_sensor_frame_id_,  base_link_frame_id_); // [cite: 11, 126]
         load_static_transform_param("lidar_current_pose_frame_to_lidar_link",lidar_current_pose_frame_id_, lidar_sensor_frame_id_); 
 
         if (!static_transforms_.empty()) {
@@ -346,7 +346,7 @@ private:
         text_marker.id = marker_id_counter++;   
         text_marker.type = visualization_msgs::Marker::TEXT_VIEW_FACING; 
         std::stringstream ss;
-        ss << class_name << " (" << std::fixed << std::setprecision(2) << confidence << ")"; 
+        ss << class_name << " (" << std::fixed << std::setprecision(2) << ")"; 
         text_marker.text = ss.str();
         text_marker.pose.position.z += 0.15;
         text_marker.scale.x = 0.0; text_marker.scale.y = 0.0; text_marker.scale.z = 0.1;

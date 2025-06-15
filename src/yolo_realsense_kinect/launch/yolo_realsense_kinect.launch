@@ -38,8 +38,8 @@
       <param name="depth_topic" value="/k4a/aligned_depth_to_color/image_raw"/>
       <param name="info_topic"  value="/k4a/color/camera_info"/>
 
-      <param name="loop_distance_max_" value="8.0" />
-      <param name="loop_distance_min_" value="1.2" />
+      <param name="loop_distance_max" value="5.0" />
+      <param name="loop_distance_min" value="1.2" />
   </node> 
   
   <node pkg="yolo_realsense_kinect" type="yolo_kinect_circle_node" name="yolo_kinect_circle_node" output="screen">
@@ -53,8 +53,8 @@
       <param name="depth_topic" value="/k4a/aligned_depth_to_color/image_raw"/>
       <param name="info_topic"  value="/k4a/color/camera_info"/>
 
-      <param name="loop_distance_max_" value="3.0" />
-      <param name="loop_distance_min_" value="0.2" />
+      <param name="circle_distance_max" value="3.0" />
+      <param name="circle_distance_min" value="0.2" />
   </node>
 
   </launch>

@@ -96,7 +96,7 @@ private:
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "serial_test");
-    ros::NodeHandle nh;
+    ros::NodeHandle nh("~");
     SerialSender sender(nh);
 
     ros::Rate rate(1);  // 25Hz循环

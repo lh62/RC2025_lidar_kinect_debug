@@ -11,7 +11,6 @@
 #include <yolo_realsense_kinect/DetectedObject3DArray_kinect_circle.h>
 #include <vector>
 #include <utility>
-#include <algorithm>
 
 struct __attribute__((packed)) DataPacket
 {
@@ -32,13 +31,6 @@ struct __attribute__((packed)) check_point
     double y;
 };
 
-struct TrackedPoint
-{
-    int hit_count;                                                        // 命中次数
-    yolo_realsense_kinect::DetectedObject3D_kinect_circle detection_data; // 检测到的数据
-    ros::Time last_seen;                                                  // 最后一次见到该点的时间
-};
-
 class SerialSender
 {
 public:
@@ -52,8 +44,7 @@ public:
         nh.param<bool>("en_kinect_loop", en_kinect_loop, true);
         nh.param<bool>("en_kinect_circle", en_kinect_circle, true);
         nh.param<bool>("en_base_link", en_base_link, true);
-        nh.param<float>("arrive_circle_point_distance_y", arrive_circle_point_distance_y, 0.55);
-        nh.param<float>("arrive_circle_point_distance_threshold", arrive_circle_point_distance_threshold, 0.6);
+        nh.param<float>("arrive_circle_point_distance_threshold", arrive_circle_point_distance_threshold, 0.5);
         nh.param<float>("arrive_circle_point_x_threshold", arrive_circle_point_x_threshold, 0.1);
         nh.param<float>("arrive_circle_point_y_threshold", arrive_circle_point_y_threshold, 0.1);
         nh.param<float>("similar_circle_point_x_threshold", similar_circle_point_x_threshold, 0.1);
@@ -67,10 +58,9 @@ public:
         nh.param<float>("changdi_chang_tiao", changdi_chang_tiao, 6.0f);
         nh.param<bool>("kuan_equal_x", kuan_equal_x, true);
         nh.param<bool>("whether_zhu", whether_zhu, false);
+        nh.param<int>("frequency_count", frequency_count, 3);
         nh.param<int>("threshold_to_rectify", threshold_to_rectify, 3);
-        nh.param<int>("threshold_to_arrive", threshold_to_arrive, 5);
         nh.param<bool>("debug_mode", debug_mode, false);
-        nh.param<float>("delay_time", delay_time, 1.2 / 30.0f); // 老化延迟时间
 
         pub_circle_debug_markers_ = nh.advertise<visualization_msgs::MarkerArray>("serial_sender/circle_debug_markers", 1);
 
@@ -88,8 +78,9 @@ public:
         data_packet.base_link_x = 0.0;
         data_packet.base_link_y = 0.0;
         data_packet.base_link_w = 0.0;
-
-        this->count = 3;
+        this->fixed_circle_points_list.clear();
+        this->count = 0;
+        this->count0 = 5;
         this->counter = 0;
         this->x_count = 0;
         this->y_count = 0;
@@ -104,44 +95,40 @@ public:
         }
         catch (serial::IOException &e)
         {
-            ROS_ERROR_STREAM("Unable to open serial port:" << e.what());
+            ROS_ERROR_STREAM("无法打开串口: " << e.what());
         }
 
         if (ser.isOpen())
         {
-            ROS_INFO("Serial port successfully opened");
+            ROS_INFO("串口成功打开");
         }
         else
         {
-            ROS_ERROR("Serial port opening failed");
+            ROS_ERROR("串口打开失败");
         }
     }
 
     void sub_base_link_Callback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     {
-        if(this->counter < this->count){
+        if(this->counter < this->count0){
             this->x_list.push_back(msg->pose.position.x * 1000);
             this->y_list.push_back(msg->pose.position.y * 1000);
+            this->x_count += msg->pose.position.x * 1000;
+            this->y_count += msg->pose.position.y * 1000;
             this->counter++;   
             return;
         }
         
-        std::sort(this->x_list.begin(), this->x_list.end());
-        std::sort(this->y_list.begin(), this->y_list.end());
-
-        if(this->count % 2 == 0){
-            this->data_packet.base_link_x = (this->x_list[this->count/2] + this->x_list[this->count/2 - 1]) / 2.0;
-            this->data_packet.base_link_y = (this->y_list[this->count/2] + this->y_list[this->count/2 - 1]) / 2.0;
-        }else{
-            this->data_packet.base_link_x = this->x_list[this->count/2];
-            this->data_packet.base_link_y = this->y_list[this->count/2];
+        
+        this->x_count = (this->x_count - this->x_list[counter % count0] + msg->pose.position.x * 1000);
+        this->y_count = (this->y_count - this->y_list[counter % count0] + msg->pose.position.y * 1000);
+        data_packet.base_link_x = (this->x_count) / count0;
+        data_packet.base_link_y = (this->y_count) / count0;
+        if(counter % count0 == 0){
+            counter = count0;
         }
-        this->x_list[counter % count] = msg->pose.position.x * 1000;
-        this->y_list[counter % count] = msg->pose.position.y * 1000;
-
-        if(counter % count == 0){
-            counter = count;
-        }
+        this->x_list[counter % count0] = msg->pose.position.x * 1000;
+        this->y_list[counter % count0] = msg->pose.position.y * 1000;
         counter++;
 
         double t_roll, t_pitch, t_yaw;
@@ -157,30 +144,22 @@ public:
         {
             data_packet.kinect_loop_depth = 50000;
             data_packet.kinect_loop_dx = 50000;
+            // ROS_WARN("no_loop_target");
         }
         else
         {
             float conf = 0;
             int index = 0;
-            int loop_count = 0; // 用于debug重复高置信度框
             for (int i = 0; i < msg->detections.size(); i++)
             {
                 if (msg->detections[i].confidence > conf)
                 {
                     conf = msg->detections[i].confidence;
                     index = i;
-                    if (msg->detections[i].confidence > 0.8)
-                    {
-                        loop_count++;
-                    }
                 }
             }
-            data_packet.kinect_loop_depth = 50000;
+            data_packet.kinect_loop_depth = msg->detections[index].point_3d.z * 1000;
             data_packet.kinect_loop_dx = msg->detections[index].dx;
-            if (loop_count > 1)
-            {
-                ROS_WARN("loop_count: %d ,too many high confidence loop_target", loop_count);
-            }
         }
     }
 
@@ -193,89 +172,44 @@ public:
             return;
         }
 
-        ros::Time current_time = ros::Time::now();
-        ROS_INFO("tracked_circle_points_list size: %ld", tracked_circle_points_list.size());
-
-        // --- 步骤 1: 将当前帧的检测结果与已跟踪列表进行匹配 ---
-
-        for (const auto &new_detection : msg->detections)
+        if (this->count < this->frequency_count)
         {
-            // 检查越界点
-            if (!whether_no_cross_line(new_detection.point_3d.x, new_detection.point_3d.y))
-            {
-                continue;
-            }
-            bool found_match = false;
-            // 尝试匹配已有的点
-            for (int i = 0; i < tracked_circle_points_list.size(); ++i)
-            {
-                auto &tracked_point = tracked_circle_points_list[i];
-                double dist_x = std::abs(new_detection.point_3d.x - tracked_point.detection_data.point_3d.x);
-                double dist_y = std::abs(new_detection.point_3d.y - tracked_point.detection_data.point_3d.y);
+            evaluate_good_circle_point(msg);
+            this->count++;
+            return;
+        }
 
-                if (dist_x < similar_circle_point_x_threshold && dist_y < similar_circle_point_y_threshold)
-                {
-                    // 匹配成功：更新位置（平滑滤波），增加命中数，更新时间戳
-                    tracked_point.detection_data.point_3d.x = (new_detection.point_3d.x + tracked_point.detection_data.point_3d.x) / 2.0;
-                    tracked_point.detection_data.point_3d.y = (new_detection.point_3d.y + tracked_point.detection_data.point_3d.y) / 2.0;
-                    tracked_point.hit_count = tracked_point.hit_count > 1000 ? 1000 : tracked_point.hit_count + 1;
-                    tracked_point.last_seen = current_time;
-                    found_match = true;
-                    break;
-                }
-            }
-            // 未匹配成功：作为新目标点加入列表
-            if (!found_match)
+        this->rectifyed_circle_points_list.clear();
+
+        for (const auto &adjust_point : this->fixed_circle_points_list)
+        {
+            if (adjust_point.first >= threshold_to_rectify)
             {
-                TrackedPoint new_point;
-                new_point.detection_data = new_detection;
-                new_point.hit_count = 1;
-                new_point.last_seen = current_time;
-                tracked_circle_points_list.push_back(new_point);
+                this->rectifyed_circle_points_list.push_back(adjust_point.second);
             }
         }
 
-        // --- 步骤 2: 老化和移除失活的目标 ---
-        // 遍历所有已跟踪点，移除那些长时间未被匹配到的
-        tracked_circle_points_list.erase(
-            std::remove_if(tracked_circle_points_list.begin(), tracked_circle_points_list.end(),
-                           [current_time, this](const TrackedPoint &p)
-                           {
-                               // 如果一个点超过delay_time秒没被再次看到，就移除它
-                               return (((current_time - p.last_seen).toSec() > this->delay_time));
-                           }),
-            tracked_circle_points_list.end());
-
-        // --- 步骤 3: 每一帧都进行决策，选择最优目标 ---
+        this->count = 0;
+        this->fixed_circle_points_list.clear();
+        // 找出非打卡点中距离底盘最近的点
         double min_dist_sq = std::numeric_limits<double>::max();
-        bool found_target = false;
-
-        // 从所有“稳定”的跟踪点中选择
-        for (const auto &tracked_point : tracked_circle_points_list)
+        bool found = false;
+        for (const auto &detection : this->rectifyed_circle_points_list)
         {
-            // 只有命中次数超过阈值的点，才被认为是有效和稳定的
-            if (tracked_point.hit_count >= threshold_to_rectify)
+            // ROS_INFO("circle point: %f %f", detection.point_3d.x, detection.point_3d.y);
+            if ((!is_in_arrived_list(detection)) && whether_cross_line(detection.point_3d.x, detection.point_3d.y))
             {
-                if ((!is_in_arrived_list(tracked_point.detection_data)))
+                double dx = detection.point_3d.x - data_packet.base_link_x / 1000.0;
+                double dy = detection.point_3d.y - data_packet.base_link_y / 1000.0;
+                double dist_sq = dx * dx + dy * dy;
+                if (dist_sq < min_dist_sq)
                 {
-                    double dx = tracked_point.detection_data.point_3d.x - data_packet.base_link_x / 1000.0;
-                    double dy = tracked_point.detection_data.point_3d.y - data_packet.base_link_y / 1000.0;
-                    double dist_sq = dx * dx + dy * dy;
-                    if (dist_sq < min_dist_sq)
-                    {
-                        min_dist_sq = dist_sq;
-                        data_packet.kinect_circle_x = tracked_point.detection_data.point_3d.x * 1000;
-                        data_packet.kinect_circle_y = tracked_point.detection_data.point_3d.y * 1000;
-                        found_target = true;
-                    }
+                    min_dist_sq = dist_sq;
+                    data_packet.kinect_circle_x = detection.point_3d.x * 1000;
+                    data_packet.kinect_circle_y = detection.point_3d.y * 1000;
+                    found = true;
                 }
             }
-        }
-
-        if (!found_target)
-        {
-            data_packet.kinect_circle_x = 0;
-            data_packet.kinect_circle_y = 0;
         }
 
         // 发布marker用于调试
@@ -305,17 +239,22 @@ public:
         pub_circle_debug_markers_.publish(marker_array);
 
         // 更新打卡点列表
-        for (const auto &detection : this->tracked_circle_points_list)
+        for (const auto &detection : this->rectifyed_circle_points_list)
         {
-            double dx = detection.detection_data.point_3d.x - data_packet.base_link_x / 1000.0;
-            double dy = detection.detection_data.point_3d.y - data_packet.base_link_y / 1000.0;
-            double dist_sq = dx * dx + dy * dy;
-            if ((dist_sq < arrive_circle_point_distance_threshold && dy < arrive_circle_point_distance_y) &&
-                !is_in_arrived_list(detection.detection_data) &&
-                detection.hit_count >= threshold_to_arrive)
+            // double dx = detection.point_3d.x - data_packet.base_link_x / 1000.0;
+            double dy = detection.point_3d.y - data_packet.base_link_y / 1000.0;
+            // double dist_sq = dx * dx + dy * dy;
+            if (dy < arrive_circle_point_distance_threshold &&
+                !is_in_arrived_list(detection))
             {
-                this->arrive_circle_points.push_back(check_point{detection.detection_data.point_3d.x, detection.detection_data.point_3d.y});
+                this->arrive_circle_points.push_back(check_point{detection.point_3d.x, detection.point_3d.y});
             }
+        }
+
+        if (!found)
+        {
+            data_packet.kinect_circle_x = 0;
+            data_packet.kinect_circle_y = 0;
         }
     }
 
@@ -327,7 +266,32 @@ public:
         }
         else
         {
-            ROS_WARN("Serial port not open");
+            ROS_WARN("串口未打开");
+        }
+    }
+
+    void evaluate_good_circle_point(const yolo_realsense_kinect::DetectedObject3DArray_kinect_circle::ConstPtr &msg)
+    {
+        bool is_similar = false;
+        for (const auto &detection : msg->detections)
+        {
+            for (int i = 0; i < this->fixed_circle_points_list.size(); i++)
+            {
+                if (std::abs(detection.point_3d.x - this->fixed_circle_points_list[i].second.point_3d.x) < this->similar_circle_point_x_threshold && std::abs(detection.point_3d.y - this->fixed_circle_points_list[i].second.point_3d.y) < this->similar_circle_point_y_threshold)
+                {
+                    this->fixed_circle_points_list[i].first += 1;
+                    this->fixed_circle_points_list[i].second.point_3d.x = (detection.point_3d.x + this->fixed_circle_points_list[i].second.point_3d.x) / 2;
+                    this->fixed_circle_points_list[i].second.point_3d.y = (detection.point_3d.y + this->fixed_circle_points_list[i].second.point_3d.y) / 2;
+                    is_similar = true;
+                    break;
+                }
+            }
+            if (!is_similar)
+            {
+                this->fixed_circle_points_list.push_back(std::make_pair(1, detection));
+            }
+
+            is_similar = false;
         }
     }
 
@@ -345,44 +309,42 @@ public:
 
     void print_params()
     {
-        ROS_INFO("Current parameter configuration:");
-        ROS_INFO("Serial port parameters:");
+        ROS_INFO("当前参数配置:");
+        ROS_INFO("串口参数:");
         ROS_INFO("  port: %s", port.c_str());
         ROS_INFO("  baud_rate: %d", baud_rate);
 
-        ROS_INFO("\nTopic configuration:");
+        ROS_INFO("\n话题配置:");
         ROS_INFO("  base_link_pub: %s", base_link_pub.c_str());
         ROS_INFO("  kinect_loop_pub: %s", kinect_loop_pub.c_str());
         ROS_INFO("  kinect_circle_pub: %s", kinect_circle_pub.c_str());
 
-        ROS_INFO("\nEnable status:");
+        ROS_INFO("\n使能状态:");
         ROS_INFO("  en_kinect_loop: %s", en_kinect_loop ? "true" : "false");
         ROS_INFO("  en_kinect_circle: %s", en_kinect_circle ? "true" : "false");
         ROS_INFO("  en_base_link: %s", en_base_link ? "true" : "false");
 
-        ROS_INFO("\nThreshold setting:");
-        ROS_INFO("  arrive_circle_point_distance_y: %.3f", arrive_circle_point_distance_y);
+        ROS_INFO("\n阈值设置:");
         ROS_INFO("  arrive_circle_point_distance_threshold: %.3f", arrive_circle_point_distance_threshold);
         ROS_INFO("  arrive_circle_point_x_threshold: %.3f", arrive_circle_point_x_threshold);
         ROS_INFO("  arrive_circle_point_y_threshold: %.3f", arrive_circle_point_y_threshold);
         ROS_INFO("  similar_circle_point_x_threshold: %.3f", similar_circle_point_x_threshold);
         ROS_INFO("  similar_circle_point_y_threshold: %.3f", similar_circle_point_y_threshold);
         ROS_INFO("  threshold_to_rectify: %d", threshold_to_rectify);
-        ROS_INFO("  threshold_to_arrive: %d", threshold_to_arrive);
-        ROS_INFO("  delay_time: %.3f", delay_time);
+        ROS_INFO("  frequency_count: %d", frequency_count);
 
-        ROS_INFO("\nCoordinate system configuration:");
+        ROS_INFO("\n坐标系配置:");
         ROS_INFO("  world_frame_id: %s", world_frame_id.c_str());
         ROS_INFO("  x_same_direction: %s", x_same_direction ? "true" : "false");
         ROS_INFO("  y_same_direction: %s", y_same_direction ? "true" : "false");
 
-        ROS_INFO("\nVenue parameters:");
+        ROS_INFO("\n场地参数:");
         ROS_INFO("  margin: %.3f m", margin);
         ROS_INFO("  changdi_kuan: %.3f m", changdi_kuan);
         ROS_INFO("  changdi_chang_zhu: %.3f m", changdi_chang_zhu);
         ROS_INFO("  changdi_chang_tiao: %.3f m", changdi_chang_tiao);
 
-        ROS_INFO("\nLayout configuration:");
+        ROS_INFO("\n布局配置:");
         ROS_INFO("  kuan_equal_x: %s", kuan_equal_x ? "true" : "false");
         ROS_INFO("  whether_zhu: %s", whether_zhu ? "true" : "false");
     }
@@ -400,10 +362,12 @@ public:
         return false;
     }
 
-    bool whether_no_cross_line(float x, float y)
+    bool whether_cross_line(float x, float y)
     {
         int case_value1 = (whether_zhu << 1) | (kuan_equal_x);
         int case_value2 = (x_same_direction << 1) | (y_same_direction);
+        // ROS_INFO("case_value1: %d", case_value1);
+        // ROS_INFO("case_value2: %d", case_value2);
 
         switch (case_value1)
         {
@@ -555,7 +519,6 @@ private:
     int32_t baud_rate;
     std::string port;
     std::vector<check_point> arrive_circle_points;
-    float arrive_circle_point_distance_y;
     float arrive_circle_point_distance_threshold;
     float arrive_circle_point_x_threshold;
     float arrive_circle_point_y_threshold;
@@ -570,17 +533,17 @@ private:
     float changdi_chang_tiao;
     bool whether_zhu;
     bool kuan_equal_x;
-    int threshold_to_rectify; // 用于判断是否稳定，如稳定则发布
-    int threshold_to_arrive;  // 用于判断是否加入打卡点列表
-    std::vector<TrackedPoint> tracked_circle_points_list;
-    float delay_time;
+    std::vector<std::pair<int, yolo_realsense_kinect::DetectedObject3D_kinect_circle>> fixed_circle_points_list;
+    std::vector<yolo_realsense_kinect::DetectedObject3D_kinect_circle> rectifyed_circle_points_list;
+    int frequency_count;
+    int threshold_to_rectify;
     int count;
+    int count0;
     int counter;
     float x_count;
     float y_count;
     std::vector<float> x_list;
     std::vector<float> y_list;
-
 };
 
 int main(int argc, char **argv)

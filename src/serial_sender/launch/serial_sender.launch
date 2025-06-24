@@ -40,6 +40,8 @@
         <param name="threshold_to_arrive" value="5" />
         <param name="delay_time" value="0.04" />
         <param name="debug_mode" value="true" />
+        <param name="count" value="3" />
+        <param name="lidar_init_count" value="50" />
     </node>
     </group>
 

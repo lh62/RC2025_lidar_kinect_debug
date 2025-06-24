@@ -71,6 +71,8 @@ public:
         nh.param<int>("threshold_to_arrive", threshold_to_arrive, 5);
         nh.param<bool>("debug_mode", debug_mode, false);
         nh.param<float>("delay_time", delay_time, 1.2 / 30.0f); // 老化延迟时间
+        nh.param<int>("count", count, 3);
+        nh.param<int>("lidar_init_count", lidar_init_count, 50);
 
         pub_circle_debug_markers_ = nh.advertise<visualization_msgs::MarkerArray>("serial_sender/circle_debug_markers", 1);
 
@@ -89,10 +91,10 @@ public:
         data_packet.base_link_y = 0.0;
         data_packet.base_link_w = 0.0;
 
-        this->count = 3;
         this->counter = 0;
-        this->x_count = 0;
-        this->y_count = 0;
+        this->lidar_init_counter = 0;
+        this->lidar_init_offset.x = 0;
+        this->lidar_init_offset.y = 0;
 
         try
         {
@@ -117,8 +119,22 @@ public:
         }
     }
 
+    
+    
     void sub_base_link_Callback(const geometry_msgs::PoseStamped::ConstPtr &msg)
     {
+
+        if(this->lidar_init_counter < this->lidar_init_count ){
+            this->lidar_init_offset.x += msg->pose.position.x;
+            this->lidar_init_offset.y += msg->pose.position.y;
+            if(this->lidar_init_counter == this->lidar_init_count -1){
+            this->lidar_init_offset.y = this->lidar_init_offset.y * 1000 / this->lidar_init_count;
+            this->lidar_init_offset.x = this->lidar_init_offset.x * 1000 / this->lidar_init_count;
+            }
+            this->lidar_init_counter++;
+            return;
+        }
+
         if(this->counter < this->count){
             this->x_list.push_back(msg->pose.position.x * 1000);
             this->y_list.push_back(msg->pose.position.y * 1000);
@@ -130,11 +146,11 @@ public:
         std::sort(this->y_list.begin(), this->y_list.end());
 
         if(this->count % 2 == 0){
-            this->data_packet.base_link_x = (this->x_list[this->count/2] + this->x_list[this->count/2 - 1]) / 2.0;
-            this->data_packet.base_link_y = (this->y_list[this->count/2] + this->y_list[this->count/2 - 1]) / 2.0;
+            this->data_packet.base_link_x = (this->x_list[this->count/2] + this->x_list[this->count/2 - 1]) / 2.0 - this->lidar_init_offset.x;
+            this->data_packet.base_link_y = (this->y_list[this->count/2] + this->y_list[this->count/2 - 1]) / 2.0 - this->lidar_init_offset.y;
         }else{
-            this->data_packet.base_link_x = this->x_list[this->count/2];
-            this->data_packet.base_link_y = this->y_list[this->count/2];
+            this->data_packet.base_link_x = this->x_list[this->count/2] - this->lidar_init_offset.x;
+            this->data_packet.base_link_y = this->y_list[this->count/2] - this->lidar_init_offset.y;
         }
         this->x_list[counter % count] = msg->pose.position.x * 1000;
         this->y_list[counter % count] = msg->pose.position.y * 1000;
@@ -576,8 +592,9 @@ private:
     float delay_time;
     int count;
     int counter;
-    float x_count;
-    float y_count;
+    int lidar_init_count;
+    int lidar_init_counter;
+    check_point lidar_init_offset;
     std::vector<float> x_list;
     std::vector<float> y_list;
 
